@@ -2,8 +2,12 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
-	"k8s.io/apimachinery/pkg/util/runtime"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -17,6 +21,15 @@ import (
 	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	// _ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 )
+
+func onPodCreate(obj interface{}) {
+	objM, ok := obj.(v1.ObjectMeta)
+	if !ok {
+		panic("Cant convert type")
+	}
+
+	fmt.Printf("Pod created: %s", &objM.Name)
+}
 
 func main() {
 	// creates the in-cluster config
@@ -37,20 +50,21 @@ func main() {
 	// Get the informer for the right resource, in this case a Pod
 	informer := factory.Core().V1().Pods().Informer()
 
-	// Create a channel to stops the shared informer gracefully
-	stopper := make(chan struct{})
-	defer close(stopper)
-
-	// Kubernetes serves an utility to handle API crashes
-	defer runtime.HandleCrash()
-
 	// This is the part where your custom code gets triggered based on the
 	// event that the shared informer catches
 	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		// When a new pod gets created
-		AddFunc: func(obj interface{}) { fmt.Println("New pod created") },
+		AddFunc: onPodCreate,
 	})
 
-	// You need to start the informer, in my case, it runs in the background
-	go informer.Run(stopper)
+	// Initializes all active informers and starts the internal goroutine
+	factory.Start(wait.NeverStop)
+	factory.WaitForCacheSync(wait.NeverStop)
+
+	// Block the main function to keep the process running
+	stopCh := make(chan os.Signal, 1)
+	signal.Notify(stopCh, syscall.SIGTERM, syscall.SIGINT)
+	<-stopCh
+
+	fmt.Println("Shutting down gracefully")
 }

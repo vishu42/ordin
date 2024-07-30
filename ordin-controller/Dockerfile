@@ -8,10 +8,12 @@ WORKDIR /app
 COPY . .
 
 # Builds your app with optional configuration
-RUN go build -o /main
+RUN go build -o main
  
 # Tells Docker which network port your container listens on
 EXPOSE 8080
+
+RUN chmod 755 main
  
 # Specifies the executable command that runs when the container starts
-CMD [ “/main” ]
+CMD [ "./main" ]

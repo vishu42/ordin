@@ -1,42 +1,35 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
+	"time"
 
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
+	"ordin-controller/pkg/signals"
+
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
-	//
-	// Uncomment to load all auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth"
-	//
-	// Or uncomment to load specific auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/azure"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
-func onPodCreate(obj interface{}) {
-	objM, ok := obj.(v1.ObjectMeta)
-	if !ok {
-		panic("Cant convert type")
-	}
-
-	fmt.Printf("Pod created: %s", &objM.Name)
-}
-
 func main() {
+	fmt.Println("checkpoint 1")
+	ctx := signals.SetupSignalHandler()
+
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		panic(err.Error())
+		// fallback to kubeconfig (out-cluster)
+		kubeconfig := "/home/vihal-linux/.kube/config"
+		flag.Parse()
+
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+		if err != nil {
+			panic(err)
+		}
 	}
+
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -45,26 +38,18 @@ func main() {
 
 	// Create the shared informer factory and use the client to connect to
 	// Kubernetes
-	factory := informers.NewSharedInformerFactory(clientset, 0)
+	kubeInformerFactory := informers.NewSharedInformerFactory(clientset, time.Second*30)
 
 	// Get the informer for the right resource, in this case a Pod
-	informer := factory.Core().V1().Pods().Informer()
+	deploymentinformer := kubeInformerFactory.Apps().V1().Deployments()
+	c := NewController(clientset, deploymentinformer)
 
-	// This is the part where your custom code gets triggered based on the
-	// event that the shared informer catches
-	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		// When a new pod gets created
-		AddFunc: onPodCreate,
-	})
+	kubeInformerFactory.Start(ctx.Done())
 
-	// Initializes all active informers and starts the internal goroutine
-	factory.Start(wait.NeverStop)
-	factory.WaitForCacheSync(wait.NeverStop)
-
-	// Block the main function to keep the process running
-	stopCh := make(chan os.Signal, 1)
-	signal.Notify(stopCh, syscall.SIGTERM, syscall.SIGINT)
-	<-stopCh
+	err = c.Run(ctx, 1)
+	if err != nil {
+		panic(err)
+	}
 
 	fmt.Println("Shutting down gracefully")
 }

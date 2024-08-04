@@ -1,14 +1,18 @@
 module ordin-controller
 
-go 1.22.3
+go 1.22.5
 
 require (
+	github.com/redis/go-redis/v9 v9.6.1
+	github.com/vishu42/ordin/pkg/util v0.0.0-00010101000000-000000000000
 	k8s.io/apimachinery v0.30.3
 	k8s.io/client-go v0.30.3
 )
 
 require (
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
@@ -47,3 +51,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
+
+replace github.com/vishu42/ordin/pkg/util => ../pkg/util

@@ -14,7 +14,6 @@ import (
 )
 
 func main() {
-	fmt.Println("checkpoint 1")
 	ctx := signals.SetupSignalHandler()
 
 	// creates the in-cluster config

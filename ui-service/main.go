@@ -7,55 +7,66 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
-	"github.com/vishu42/ordin/pkg/types"
-
+	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"github.com/vishu42/ordin/pkg/types"
 	util "github.com/vishu42/ordin/pkg/util"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/workqueue"
-
-	"github.com/gin-gonic/gin"
-	appsv1 "k8s.io/api/apps/v1"
 )
 
 type DeploymentApiHelper struct {
 	Deployments []*appsv1.Deployment
 	Workqueue   workqueue.RateLimitingInterface
 	RedisClient *redis.Client
+	mu          *sync.Mutex
 }
 
 func NewDeploymentApiHelper() *DeploymentApiHelper {
 	redisclient := util.NewRedisClient()
-
 	queue := workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Deployments")
 
 	return &DeploymentApiHelper{
 		Workqueue:   queue,
 		RedisClient: redisclient,
+		mu:          &sync.Mutex{},
 	}
 }
 
 func (d *DeploymentApiHelper) AddDeployment(deploy *appsv1.Deployment) {
+	d.mu.Lock()
+
+	defer d.mu.Unlock()
+
 	d.Deployments = append(d.Deployments, deploy)
+
+	log.Printf("Deployment added: %v\n", deploy.Name)
 }
 
 func (d *DeploymentApiHelper) DeleteDeploymentByUID(uid string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	for i, deployment := range d.Deployments {
 		if string(deployment.UID) == uid {
 			// Remove the deployment by slicing
 			d.Deployments = append(d.Deployments[:i], d.Deployments[i+1:]...)
+			log.Printf("Deployment deleted: %v\n", uid)
 			break
 		}
 	}
 }
 
-// ReplaceDeploymentByUID replaces a deployment with the specified UID with a new deployment object.
 func (d *DeploymentApiHelper) ReplaceDeploymentByUID(uid string, newDeployment *appsv1.Deployment) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	for i, deployment := range d.Deployments {
 		if string(deployment.UID) == uid {
 			d.Deployments[i] = newDeployment
+			log.Printf("Deployment replaced: %v\n", uid)
 			return nil
 		}
 	}
@@ -106,8 +117,6 @@ func (d DeploymentApiHelper) processNextItem() bool {
 	currentobj := obj.(*types.CustomObject).Obj
 	updatedObj := obj.(*types.CustomObject).UpdatedObj
 
-	// this logic might be buggy
-
 	switch action {
 	case "add":
 		deployment := &appsv1.Deployment{}
@@ -123,9 +132,7 @@ func (d DeploymentApiHelper) processNextItem() bool {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-
 		fmt.Printf("===============%+v=============\n", deployment.Name)
-
 		d.AddDeployment(deployment)
 		fmt.Printf("===============Deployments after add=============\n%+v", d.Deployments)
 
@@ -165,5 +172,6 @@ func main() {
 		fmt.Printf("-----------deployments ------------\n%+v", dh.Deployments)
 		c.JSON(http.StatusOK, dh.Deployments)
 	})
+
 	r.Run() // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
 }

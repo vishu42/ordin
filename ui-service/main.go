@@ -34,17 +34,16 @@ func NewDeploymentApiHelper() *DeploymentApiHelper {
 		Workqueue:   queue,
 		RedisClient: redisclient,
 		mu:          &sync.Mutex{},
+		Deployments: []*appsv1.Deployment{},
 	}
 }
 
 func (d *DeploymentApiHelper) AddDeployment(deploy *appsv1.Deployment) {
 	d.mu.Lock()
-
 	defer d.mu.Unlock()
-
 	d.Deployments = append(d.Deployments, deploy)
-
 	log.Printf("Deployment added: %v\n", deploy.Name)
+	log.Printf("Current deployments: %+v\n", d.Deployments)
 }
 
 func (d *DeploymentApiHelper) DeleteDeploymentByUID(uid string) {
@@ -58,6 +57,7 @@ func (d *DeploymentApiHelper) DeleteDeploymentByUID(uid string) {
 			break
 		}
 	}
+	log.Printf("Current deployments: %+v\n", d.Deployments)
 }
 
 func (d *DeploymentApiHelper) ReplaceDeploymentByUID(uid string, newDeployment *appsv1.Deployment) error {
@@ -67,13 +67,14 @@ func (d *DeploymentApiHelper) ReplaceDeploymentByUID(uid string, newDeployment *
 		if string(deployment.UID) == uid {
 			d.Deployments[i] = newDeployment
 			log.Printf("Deployment replaced: %v\n", uid)
+			log.Printf("Current deployments: %+v\n", d.Deployments)
 			return nil
 		}
 	}
 	return fmt.Errorf("deployment with UID %s not found", uid)
 }
 
-func (d DeploymentApiHelper) SubscribeRedisChannel(ctx context.Context, channel string) *redis.PubSub {
+func (d *DeploymentApiHelper) SubscribeRedisChannel(ctx context.Context, channel string) *redis.PubSub {
 	pubsub := d.RedisClient.Subscribe(ctx, channel)
 	_, err := pubsub.Receive(ctx)
 	if err != nil {
@@ -82,7 +83,7 @@ func (d DeploymentApiHelper) SubscribeRedisChannel(ctx context.Context, channel 
 	return pubsub
 }
 
-func (d DeploymentApiHelper) ProcessChannel(ctx context.Context, ps *redis.PubSub) {
+func (d *DeploymentApiHelper) ProcessChannel(ctx context.Context, ps *redis.PubSub) {
 	defer ps.Close()
 	ch := ps.Channel()
 
@@ -101,12 +102,12 @@ func (d DeploymentApiHelper) ProcessChannel(ctx context.Context, ps *redis.PubSu
 	}
 }
 
-func (d DeploymentApiHelper) runWorker(ctx context.Context) {
+func (d *DeploymentApiHelper) runWorker(ctx context.Context) {
 	for d.processNextItem() {
 	}
 }
 
-func (d DeploymentApiHelper) processNextItem() bool {
+func (d *DeploymentApiHelper) processNextItem() bool {
 	obj, shutdown := d.Workqueue.Get()
 	if shutdown {
 		return false
@@ -132,9 +133,7 @@ func (d DeploymentApiHelper) processNextItem() bool {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		fmt.Printf("===============%+v=============\n", deployment.Name)
 		d.AddDeployment(deployment)
-		fmt.Printf("===============Deployments after add=============\n%+v", d.Deployments)
 
 	case "update":
 		currentdeployment := currentobj.(*appsv1.Deployment)
@@ -154,6 +153,7 @@ func main() {
 	ctx := context.TODO()
 
 	dh := NewDeploymentApiHelper()
+
 	deploymentaddpubsub := dh.SubscribeRedisChannel(ctx, "deployments_add")
 	go dh.ProcessChannel(ctx, deploymentaddpubsub)
 
@@ -161,17 +161,19 @@ func main() {
 		go wait.UntilWithContext(ctx, dh.runWorker, time.Second)
 	}
 
+	pong := "pong"
+
 	r := gin.Default()
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"message": "pong",
+			"message": pong,
 		})
 	})
 
 	r.GET("/deployments", func(c *gin.Context) {
-		fmt.Printf("-----------deployments ------------\n%+v", dh.Deployments)
+		dh.mu.Lock()
+		defer dh.mu.Unlock()
 		c.JSON(http.StatusOK, dh.Deployments)
 	})
-
 	r.Run() // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
 }

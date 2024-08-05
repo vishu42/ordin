@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	redis "github.com/redis/go-redis/v9"
+	"github.com/vishu42/ordin/pkg/types"
 	util "github.com/vishu42/ordin/pkg/util"
 	appsinformers "k8s.io/client-go/informers/apps/v1"
 	"k8s.io/client-go/kubernetes"
@@ -25,12 +26,6 @@ type Controller struct {
 	workqueue         workqueue.RateLimitingInterface
 	deploymentsSynced cache.InformerSynced
 	redisclient       *redis.Client
-}
-
-type CustomObject struct {
-	Obj        interface{} `json:"obj"`
-	Action     string      `json:"action"`
-	UpdatedObj interface{} `json:"updatedObj,omitempty"`
 }
 
 func NewController(clientset *kubernetes.Clientset, deploymentInformer appsinformers.DeploymentInformer) *Controller {
@@ -57,15 +52,15 @@ func NewController(clientset *kubernetes.Clientset, deploymentInformer appsinfor
 }
 
 func (c *Controller) handleAdd(obj interface{}) {
-	c.workqueue.Add(&CustomObject{Obj: obj, Action: "add"})
+	c.workqueue.Add(&types.CustomObject{Obj: obj, Action: "add"})
 }
 
 func (c *Controller) handleUpdate(oldObj, newObj interface{}) {
-	c.workqueue.Add(&CustomObject{Obj: oldObj, Action: "update", UpdatedObj: oldObj})
+	c.workqueue.Add(&types.CustomObject{Obj: oldObj, Action: "update", UpdatedObj: oldObj})
 }
 
 func (c *Controller) handleDelete(obj interface{}) {
-	c.workqueue.Add(&CustomObject{Obj: obj, Action: "delete"})
+	c.workqueue.Add(&types.CustomObject{Obj: obj, Action: "delete"})
 }
 
 func (c *Controller) Run(ctx context.Context, workers int) error {
@@ -100,7 +95,7 @@ func (c *Controller) runWorker(ctx context.Context) {
 func (c *Controller) processNextItem() bool {
 	obj, shutdown := c.workqueue.Get()
 
-	action := obj.(*CustomObject).Action
+	action := obj.(*types.CustomObject).Action
 
 	fmt.Println(action)
 
@@ -110,7 +105,7 @@ func (c *Controller) processNextItem() bool {
 
 	defer c.workqueue.Done(obj)
 
-	objref, err := cache.ObjectToName((obj.(*CustomObject).Obj))
+	objref, err := cache.ObjectToName((obj.(*types.CustomObject).Obj))
 	if err != nil {
 		panic(err)
 	}

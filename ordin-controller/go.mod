@@ -4,6 +4,7 @@ go 1.22.5
 
 require (
 	github.com/redis/go-redis/v9 v9.6.1
+	github.com/vishu42/ordin/pkg/types v0.0.0-00010101000000-000000000000
 	github.com/vishu42/ordin/pkg/util v0.0.0-00010101000000-000000000000
 	k8s.io/apimachinery v0.30.3
 	k8s.io/client-go v0.30.3
@@ -52,4 +53,7 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace github.com/vishu42/ordin/pkg/util => ../pkg/util
+replace (
+	github.com/vishu42/ordin/pkg/types => ../pkg/types
+	github.com/vishu42/ordin/pkg/util => ../pkg/util
+)

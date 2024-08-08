@@ -118,30 +118,47 @@ func (d *DeploymentApiHelper) processNextItem() bool {
 	currentobj := obj.(*types.CustomObject).Obj
 	updatedObj := obj.(*types.CustomObject).UpdatedObj
 
-	switch action {
-	case "add":
-		deployment := &appsv1.Deployment{}
-		j, err := json.Marshal(currentobj)
+	currentdeployment := &appsv1.Deployment{}
+	j, err := json.Marshal(currentobj)
+	if err != nil {
+		fmt.Printf("error marshalling\n")
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	err = json.Unmarshal(j, &currentdeployment)
+	if err != nil {
+		fmt.Printf("error unmarshalling\n")
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	updateddeployment := &appsv1.Deployment{}
+
+	if updatedObj != nil {
+		j, err = json.Marshal(updatedObj)
 		if err != nil {
 			fmt.Printf("error marshalling\n")
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		err = json.Unmarshal(j, &deployment)
+		err = json.Unmarshal(j, &updateddeployment)
 		if err != nil {
 			fmt.Printf("error unmarshalling\n")
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		d.AddDeployment(deployment)
+	}
 
+	switch action {
+	case "add":
+		d.AddDeployment(currentdeployment)
 	case "update":
-		currentdeployment := currentobj.(*appsv1.Deployment)
-		newdeployment := updatedObj.(*appsv1.Deployment)
-		olduid := string(currentdeployment.UID)
-		d.ReplaceDeploymentByUID(olduid, newdeployment)
+		if updatedObj != nil {
+			olduid := string(updateddeployment.UID)
+
+			d.ReplaceDeploymentByUID(olduid, updateddeployment)
+		}
 	case "delete":
-		currentdeployment := currentobj.(*appsv1.Deployment)
 		uid := string(currentdeployment.UID)
 		d.DeleteDeploymentByUID(uid)
 	}
@@ -156,6 +173,12 @@ func main() {
 
 	deploymentaddpubsub := dh.SubscribeRedisChannel(ctx, "deployments_add")
 	go dh.ProcessChannel(ctx, deploymentaddpubsub)
+
+	deploymentupdatepubsub := dh.SubscribeRedisChannel(ctx, "deployments_update")
+	go dh.ProcessChannel(ctx, deploymentupdatepubsub)
+
+	deploymentdeletepubsub := dh.SubscribeRedisChannel(ctx, "deployments_delete")
+	go dh.ProcessChannel(ctx, deploymentdeletepubsub)
 
 	for i := 0; i < 2; i++ {
 		go wait.UntilWithContext(ctx, dh.runWorker, time.Second)

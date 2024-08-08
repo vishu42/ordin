@@ -37,7 +37,7 @@ func main() {
 
 	// Create the shared informer factory and use the client to connect to
 	// Kubernetes
-	kubeInformerFactory := informers.NewSharedInformerFactory(clientset, time.Second*30)
+	kubeInformerFactory := informers.NewSharedInformerFactory(clientset, time.Second*300)
 
 	// Get the informer for the right resource, in this case a Pod
 	deploymentinformer := kubeInformerFactory.Apps().V1().Deployments()

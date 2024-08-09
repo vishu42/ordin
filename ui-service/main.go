@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -43,8 +44,8 @@ func main() {
 	})
 
 	r.GET("/deployments", func(c *gin.Context) {
-		dh.mu.Lock()
-		defer dh.mu.Unlock()
+		deploymentsMap := dh.RedisClient.HGetAll(ctx, "deployments").Val()
+		d := deploymentsMap.(map[string]appsv1.Deployment)
 		c.JSON(http.StatusOK, dh.Deployments)
 	})
 	r.Run() // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")

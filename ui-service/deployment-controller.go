@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sync"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/vishu42/ordin/pkg/types"
@@ -16,10 +15,8 @@ import (
 )
 
 type DeploymentApiController struct {
-	Deployments []*appsv1.Deployment
 	Workqueue   workqueue.RateLimitingInterface
 	RedisClient *redis.Client
-	mu          *sync.Mutex
 }
 
 func NewDeploymentApiController() *DeploymentApiController {
@@ -29,44 +26,42 @@ func NewDeploymentApiController() *DeploymentApiController {
 	return &DeploymentApiController{
 		Workqueue:   queue,
 		RedisClient: redisclient,
-		mu:          &sync.Mutex{},
-		Deployments: []*appsv1.Deployment{},
 	}
 }
 
-func (d *DeploymentApiController) AddDeployment(deploy *appsv1.Deployment) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.Deployments = append(d.Deployments, deploy)
+func (d *DeploymentApiController) AddDeployment(ctx context.Context, deploy *appsv1.Deployment) {
+	// d.Deployments = append(d.Deployments, deploy)
+
+	uid := string(deploy.UID)
+	d.RedisClient.HSet(ctx, "deployments", uid, deploy)
 	log.Printf("Deployment added: %v\n", deploy.Name)
-	log.Printf("Current deployments: %+v\n", d.Deployments)
 }
 
-func (d *DeploymentApiController) DeleteDeploymentByUID(uid string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	for i, deployment := range d.Deployments {
-		if string(deployment.UID) == uid {
-			// Remove the deployment by slicing
-			d.Deployments = append(d.Deployments[:i], d.Deployments[i+1:]...)
-			log.Printf("Deployment deleted: %v\n", uid)
-			break
-		}
-	}
-	log.Printf("Current deployments: %+v\n", d.Deployments)
+func (d *DeploymentApiController) DeleteDeploymentByUID(ctx context.Context, uid string) {
+	// for i, deployment := range d.Deployments {
+	// 	if string(deployment.UID) == uid {
+	// 		// Remove the deployment by slicing
+	// 		d.Deployments = append(d.Deployments[:i], d.Deployments[i+1:]...)
+	// 		log.Printf("Deployment deleted: %v\n", uid)
+	// 		break
+	// 	}
+	// }
+
+	d.RedisClient.HDel(ctx, "deployments", uid)
 }
 
-func (d *DeploymentApiController) ReplaceDeploymentByUID(uid string, newDeployment *appsv1.Deployment) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	for i, deployment := range d.Deployments {
-		if string(deployment.UID) == uid {
-			d.Deployments[i] = newDeployment
-			log.Printf("Deployment replaced: %v\n", uid)
-			log.Printf("Current deployments: %+v\n", d.Deployments)
-			return nil
-		}
-	}
+func (d *DeploymentApiController) ReplaceDeploymentByUID(ctx context.Context, uid string, newDeployment *appsv1.Deployment) error {
+	// for i, deployment := range d.Deployments {
+	// 	if string(deployment.UID) == uid {
+	// 		d.Deployments[i] = newDeployment
+	// 		log.Printf("Deployment replaced: %v\n", uid)
+	// 		log.Printf("Current deployments: %+v\n", d.Deployments)
+	// 		return nil
+	// 	}
+	// }
+
+	d.DeleteDeploymentByUID(ctx, uid)
+	d.AddDeployment(ctx, newDeployment)
 	return fmt.Errorf("deployment with UID %s not found", uid)
 }
 
@@ -99,11 +94,11 @@ func (d *DeploymentApiController) ProcessChannel(ctx context.Context, ps *redis.
 }
 
 func (d *DeploymentApiController) runWorker(ctx context.Context) {
-	for d.processNextItem() {
+	for d.processNextItem(ctx) {
 	}
 }
 
-func (d *DeploymentApiController) processNextItem() bool {
+func (d *DeploymentApiController) processNextItem(ctx context.Context) bool {
 	obj, shutdown := d.Workqueue.Get()
 	if shutdown {
 		return false
@@ -147,16 +142,16 @@ func (d *DeploymentApiController) processNextItem() bool {
 
 	switch action {
 	case "add":
-		d.AddDeployment(currentdeployment)
+		d.AddDeployment(ctx, currentdeployment)
 	case "update":
 		if updatedObj != nil {
 			olduid := string(updateddeployment.UID)
 
-			d.ReplaceDeploymentByUID(olduid, updateddeployment)
+			d.ReplaceDeploymentByUID(ctx, olduid, updateddeployment)
 		}
 	case "delete":
 		uid := string(currentdeployment.UID)
-		d.DeleteDeploymentByUID(uid)
+		d.DeleteDeploymentByUID(ctx, uid)
 	}
 
 	return true
